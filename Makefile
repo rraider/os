@@ -1,8 +1,9 @@
 CC=gcc
-CCFLAGS=
+CCFLAGS=-m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector\
+ -nostartfiles -nodefaultlibs -Wall -Wextra -Werror -c
 
-ASM=nasm
-ASMFLAGS=-f elf32
+AS=nasm
+ASFLAGS=-f elf32
 
 LD=ld
 LDFLAGS=-T link.ld -melf_i386
@@ -10,25 +11,37 @@ LDFLAGS=-T link.ld -melf_i386
 BUILD_DIR=build
 SOURCE_DIR=src
 
-CSRC_FILES=$(wildcard $(SOURCE_DIR)/*.c)
-ASM_FILES=$(wildcard $(SOURCE_DIR)/*.s)
+CSRC_FILES=$(shell find $(SOURCE_DIR) -name *.c -print)
+ASM_FILES=$(shell find $(SOURCE_DIR) -name *.s -print)
+HEADER_FILES=$(shell find $(SOURCE_DIR) -name *.h -print)
 
-OBJ_FILES=$(addprefix $(BUILD_DIR)/, $(notdir $(CSRC_FILES:c=o) $(ASM_FILES:=.o)))
+OBJ_FILES=$(patsubst $(SOURCE_DIR)%,$(BUILD_DIR)%, $(CSRC_FILES:c=o) $(ASM_FILES:s=o))
 
+all: $(BUILD_DIRS) $(BUILD_DIR)/os.iso
 
-all: $(BUILD_DIR)/os.iso
+$(BUILD_DIR):
+	mkdir -p $@
 
-$(BUILD_DIR)/os.iso: $(BUILD_DIR)/kernel.elf
-	grub-mkrescue -o $^ iso
+run: $(BUILD_DIR) $(BUILD_DIR)/os.iso
+	bochs -f bochs/bochsrc.txt -q -rc bochs/continue
+
+$(BUILD_DIR)/os.iso: $(BUILD_DIR)/kernel.elf iso/boot/grub/grub.cfg
+	cp $(BUILD_DIR)/kernel.elf iso/boot/kernel.elf
+	grub-mkrescue -o $@ iso
 
 $(BUILD_DIR)/kernel.elf: $(OBJ_FILES)
+	echo $(OBJ_FILES)
 	$(LD) $(LDFLAGS) $^ -o $@
 
+$(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.s $(HEADER_FILES)
+	mkdir -p $(dir $@)
+	$(AS) $(ASFLAGS) -o $@ $<
 
-$(BUILD_DIR)/%.s.o: %.s
-	$(ASM) $(ASMFLAGS) -o $(BUILD_DIR)/$@ $<
+$(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c $(HEADER_FILES)
+	mkdir -p $(dir $@)
+	$(CC) $(CCFLAGS) -o $@ $<
 
-$(BUILD_DIR)/%.o: %.c
-	echo "C not implemented"
+clean:
+	rm -rf build/
 
-.PHONY: all
+.PHONY: all run clean
